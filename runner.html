@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Soda Defender: Endless Run (Monetized)</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #050510; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        #appContainer { width: 100%; max-width: 400px; height: 100vh; max-height: 750px; background: linear-gradient(to bottom, #001133, #000011); border: 3px solid #0055ff; border-radius: 20px; position: relative; display: flex; flex-direction: column; overflow: hidden; }
+        
+        #scoreBoard { position: absolute; top: 15px; left: 15px; font-size: 20px; font-weight: bold; color: #00ffcc; z-index: 20; text-shadow: 2px 2px #000; }
+        #gameTrack { width: 100%; height: 80%; position: relative; background: #080818; overflow: hidden; border-bottom: 5px solid #0055ff; }
+        
+        /* HERO */
+        #hero { width: 45px; height: 65px; background: linear-gradient(to bottom, #0055ff, #ff0055); border: 3px solid #fff; border-radius: 8px; position: absolute; bottom: 20px; left: 175px; z-index: 10; transition: left 0.15s ease, bottom 0.2s ease, height 0.15s ease; box-shadow: 0 0 15px #0055ff; display: flex; justify-content: center; align-items: center; font-size: 24px; }
+        
+        .lane-line { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.1); }
+        .obstacle { position: absolute; width: 50px; height: 50px; background: #ffaa00; border: 2px solid #000; border-radius: 5px; z-index: 5; display: flex; justify-content: center; align-items: center; font-size: 24px; }
+        .can { position: absolute; width: 30px; height: 40px; background: #00ffcc; border-radius: 4px; z-index: 6; display: flex; justify-content: center; align-items: center; font-size: 14px; color: #000; font-weight: bold; }
+
+        #controlPanel { width: 100%; height: 20%; background: #111122; display: flex; justify-content: space-around; align-items: center; padding: 10px; z-index: 25; }
+        .ctrl-btn { width: 45%; height: 80%; background: #0055ff; border: none; border-radius: 12px; color: #fff; font-size: 18px; font-weight: bold; box-shadow: 0 4px 10px rgba(0,85,255,0.4); }
+        
+        /* MONETIZED GAME OVER OVERLAY */
+        #gameOverScreen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 30; padding: 20px; text-align: center; }
+        .usd-btn { padding: 16px 25px; font-size: 16px; font-weight: bold; background: linear-gradient(45deg, #00ffcc, #00aa88); color: #000; border: none; border-radius: 30px; cursor: pointer; box-shadow: 0 5px 15px rgba(0,255,204,0.4); width: 85%; margin: 10px 0; }
+        .restart-btn { padding: 12px 25px; font-size: 14px; background: #252545; color: #b3b3cc; border: none; border-radius: 25px; cursor: pointer; width: 60%; margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+<div id="appContainer">
+    <div id="scoreBoard">Cans: 0</div>
+    
+    <div id="gameTrack">
+        <div class="lane-line" style="left: 133px;"></div>
+        <div class="lane-line" style="left: 266px;"></div>
+        <div id="hero">🥤</div>
+        
+        <!-- GAME OVER LOGIC DENGAN BUTANG USD -->
+        <div id="gameOverScreen">
+            <h1 style="color:#ff0055; margin-bottom:10px; font-size: 32px;">CRASHED!</h1>
+            <p id="finalScore" style="margin-bottom:25px; color:#b3b3cc; font-size: 18px;">Cans Collected: 0</p>
+            
+            <!-- BUTANG GANJARAN USD AUTOMATIK (GLOBAL AD SDK PREPARATION) -->
+            <button class="usd-btn" onclick="claimUsdReward()">💰 CLAIM 2X USD REWARD</button>
+            <button class="usd-btn" style="background: linear-gradient(45deg, #ffaa00, #ff5500);" onclick="reviveHeroWithAd()">❤️ REVIVE HERO (Watch Ad)</button>
+            
+            <button class="restart-btn" onclick="restartGame()">No Thanks, Restart</button>
+        </div>
+    </div>
+
+    <div id="controlPanel">
+        <button class="ctrl-btn" onclick="moveLane(-1)">⬅️ Left</button>
+        <button class="ctrl-btn" onclick="moveLane(1)">Right ➡️</button>
+    </div>
+</div>
+
+<script>
+    const hero = document.getElementById('hero');
+    const track = document.getElementById('gameTrack');
+    const scoreBoard = document.getElementById('scoreBoard');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    
+    let currentLane = 1; 
+    const lanePositions =; 
+    
+    let score = 0;
+    let isGameOver = false;
+    let gameSpeed = 5;
+    let spawnTimer;
+    let gameLoopInterval;
+    let objectsOnTrack = [];
+    
+    let lastX;
+    window.addEventListener('devicemotion', (event) => {
+        if(isGameOver) return;
+        let acc = event.accelerationIncludingGravity;
+        if (!acc.x) return;
+        if (lastX === undefined) { lastX = acc.x; return; }
+        
+        let deltaX = Math.abs(lastX - acc.x);
+        if (deltaX > 14) { 
+            triggerSlide();
+        }
+        lastX = acc.x;
+    });
+
+    function moveLane(direction) {
+        if(isGameOver) return;
+        currentLane += direction;
+        if(currentLane < 0) currentLane = 0;
+        if(currentLane > 2) currentLane = 2;
+        hero.style.left = lanePositions[currentLane] + 'px';
+    }
+
+    function triggerSlide() {
+        hero.style.height = '35px'; 
+        hero.innerText = "🥫";
+        setTimeout(() => {
+            hero.style.height = '65px';
+            hero.innerText = "🥤";
+        }, 400);
+    }
+
+    function spawnObject() {
+        if(isGameOver) return;
+        
+        const randLane = Math.floor(Math.random() * 3);
+        const isObstacle = Math.random() > 0.4; 
+        const newObj = document.createElement('div');
+        let objType = '';
+        
+        if(isObstacle) {
+            newObj.className = 'obstacle';
+            newObj.innerText = "🚧";
+            objType = 'obstacle';
+        } else {
+            newObj.className = 'can';
+            newObj.innerText = "🥫";
+            objType = 'can';
+        }
+        
+        newObj.style.left = (lanePositions[randLane] + 2) + 'px';
+        newObj.style.top = '-70px';
+        track.appendChild(newObj);
+        
+        objectsOnTrack.push({ el: newObj, y: -70, lane: randLane, type: objType });
+        let nextSpawn = Math.max(1000 - (score * 20), 500);
+        spawnTimer = setTimeout(spawnObject, nextSpawn);
+    }
+
+    function updateGame() {
+        if(isGameOver) return;
+        
+        for(let i = objectsOnTrack.length - 1; i >= 0; i--) {
+            let obj = objectsOnTrack[i];
+            obj.y += gameSpeed + (score * 0.15);
+            obj.el.style.top = obj.y + 'px';
+            
+            if(obj.y > 490 && obj.y < 560 && obj.lane === currentLane) {
+                if(obj.type === 'obstacle') {
+                    if(hero.style.height === '35px') {
+                        // Safe under obstacle
+                    } else {
+                        endGame();
+                        return;
+                    }
+                } else if(obj.type === 'can') {
+                    score++;
+                    scoreBoard.innerText = "Cans: " + score;
+                    obj.el.remove();
+                    objectsOnTrack.splice(i, 1);
+                    continue;
+                }
+            }
+            
+            if(obj.y > 600) {
+                obj.el.remove();
+                objectsOnTrack.splice(i, 1);
+            }
+        }
+    }
+
+    function endGame() {
+        isGameOver = true;
+        clearTimeout(spawnTimer);
+        clearInterval(gameLoopInterval);
+        document.getElementById('finalScore').innerText = "Total Cans Collected: " + score;
+        gameOverScreen.style.display = 'flex';
+    }
+
+    /* PENGASAN IKLAN GLOBAL (MONETIZATION ACTIONS) */
+    function claimUsdReward() {
+        // CRAZYGAMES SDK REWARDED AD PLACEHOLDER
+        alert("Connecting to Global Ad Server... Video Loading. You will receive 2X USD completion rate upon ad completion!");
+        restartGame();
+    }
+
+    function reviveHeroWithAd() {
+        alert("Loading Reward Video Ad... Watch until the end to continue your high score!");
+        
+        // Bersihkan halangan berhampiran untuk selamatkan watak
+        objectsOnTrack.forEach(obj => obj.el.remove());
+        objectsOnTrack = [];
+        
+        isGameOver = false;
+        gameOverScreen.style.display = 'none';
+        gameLoopInterval = setInterval(updateGame, 20);
+        spawnObject();
+    }
+
+    function restartGame() {
+        objectsOnTrack.forEach(obj => obj.el.remove());
+        objectsOnTrack = [];
+        score = 0;
+        currentLane = 1;
+        isGameOver = false;
+        hero.style.left = lanePositions[currentLane] + 'px';
+        scoreBoard.innerText = "Cans: 0";
+        gameOverScreen.style.display = 'none';
+        
+        clearInterval(gameLoopInterval);
+        gameLoopInterval = setInterval(updateGame, 20);
+        clearTimeout(spawnTimer);
+        spawnObject();
+    }
+
+    restartGame();
+</script>
+</body>
+</html>
